@@ -1,0 +1,79 @@
+version: '3'
+services:
+
+  # FLASK - intermediary service to upload/download files
+  flask:
+    build: .
+    container_name: flask
+    restart: always
+    command: ["python3", "-u", "flask_server.py"]
+    environment:
+      # port to serve flask at
+      - FLASK_PORT=5000
+      # volume-mapped directory to save/serve files from
+      - FLASK_SAVE_DIR=/app/flask
+    volumes:
+      - ./flask:/app/flask
+    ports:
+      # port MUST match FLASK_PORT
+      - 5000:5000
+
+  # PROCESS A: router - sends files, downloads from flask
+  router:
+    build: .
+    container_name: router 
+    restart: always
+    command: ["python3", "-u", "router.py"]
+    environment:
+      # endpoint where flask can be reached
+      # locally with docker, that is flask container name
+      - FLASK_ENDPOINT=flask
+      # port flask service is availabe at
+      - FLASK_PORT=5000
+      # volume-mapped directory to save files to
+      - ROUTER_DIR=/app/router
+      # volume-mapped directory to watch and send files from
+      - SEND_DIR=/app/send
+      # port where ZMQ router (this service) is available
+      - ZMQ_ROUTER_PORT=6000
+      # max pipeline chunks in transit, default to 10
+      - PIPELINE=10
+      # size of chunks for writing, default to 256 MB
+      - CHUNK_SIZE=262144
+    volumes:
+      # NOTE: value after semi-colon MUST match ROUTER_DIR
+      - ./router:/app/router
+      # NOTE: value after semi-colon MUST match SEND_DIR
+      - ./send:/app/send
+    ports:
+      # port MUST match ZMQ_ROUTER_PORT
+      - 6000:6000
+
+  # PROCESS B: dealer - receives files, parses stl files, uploads to flask
+  dealer:
+    build: .
+    container_name: dealer 
+    restart: always
+    command: ["python3", "-u", "dealer.py"]
+    environment:
+      # endpoint where flask can be reached
+      # locally with docker, that is flask container name
+      - FLASK_ENDPOINT=flask
+      # port flask service is availabe at
+      - FLASK_PORT=5000
+      # volume-mapped directory to save/send files from
+      - DEALER_DIR=/app/dealer
+      # port where ZMQ dealer is available
+      - ZMQ_ROUTER_PORT=6000
+      # endpoint where ZMQ router is available - docker container name
+      - ZMQ_ROUTER_ENDPOINT=router
+      # max pipeline chunks in transit, default to 10
+      - PIPELINE=10
+      # size of chunks for writing, default to 256 MB
+      - CHUNK_SIZE=262144
+    volumes:
+      # NOTE: value after semi-colon MUST match DEALER_DIR
+      - ./dealer:/app/dealer
+    ports:
+      - 7000:7000
+

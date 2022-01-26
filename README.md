@@ -1,50 +1,131 @@
-# network_com_hw: Take-home programming project
-## Objective
-Build two independent inter-communicating processes (A & B) able to exchange data using two different means of data transfer/messaging services. The processes could be headless - run from a command line, or have a GUI (You will provide instructions for using them).
+# README
 
-For communication use any two of several methods available, such as…
-- Network sockets
-- ZeroMQ (or equivalent for chosen programming language)
-- Netty
-- Other messaging brokers (could use a test broker hosted online)
-- Other
+## The Challenge
 
-Using one method of communication, Process A must connect with B and send contents of the provided data file cad_mesh.stl (a CAD geometry). On receiving the data, B, which has earlier established a second channel of communication with A, must return the data. A will then save the received data in a file called output.stl (cad_mesh.stl must match output.stl).
+Create 2 independent processes A & B cabable of sending a file through 2 different methods. Process A must be able to send a CAD file, `cad_mesh.stl` to process B. Process B must then return the file to process A, where it will be saved as `output.stl`. The two files must match. For bonus points, have process B extract the CAD file's vertices, round them to 4 sig figs, and save them in a `CSV` file, called `output.csv`. 
 
-## Requirements
-- The application/s may run on a single Windows or Linux workstation; may be connected to the web or not. Alternatively the two processes A & B could be deployed and run on two independent work stations. 
-- Developed in the candidate's choice of programming language.
-- Candidates must provide executables for functional evaluation, as well as code for review and discussion during subsequent follow-up interview discussion. The delivered package must include any necessary configuration or other files.
-- The deliverables must include documentation that could be followed to download, install and/or run the application.
-- The code must be organized and well-documented. 
-- The effort is expected to take between 2 - 8 hours based on the candidate’s experience in network application development.
+Read the full assignent here: https://github.com/Machina-Labs/network_com_hw
 
-## Grading Criteria
-- We’re looking for code that is clean, readable, performant and maintainable.
-- The developer must think through the process of deploying and using the solution and provide necessary documentation.
-- The choice of messaging services used will not matter as long as the final code performs as expected. 
+## The Solution
 
-## Optional Simpler Scope (to reduce candidate's time and effort)
-- Implement one-way communication from process A to B using any single method of data transfer.
-- Process B is to save received data in a file called output.stl
+For semantic's sake, process A = `router` and process B = `dealer`. 
 
-## Optional Challenge (beyond original scope)
-- In Process B, implement a parser that reads the .stl file, extracts each vertex in the file and generates an Output.csv file containing the vertices.
-- The Output.csv file must be formatted to contain data (x,y,z) for each vertex on an independent line. The positional data coordinate values, each a float, must have 4 significant digits following the decimal point. 
-- Return the output.csv file to process B.
-- If not familiar, the candidate is expected to independently conduct research online to understand the format of an .STL file, which is a commonly used CAD format.
+I knew right away I'd be using Docker. I prefer Alpine images for their reduced size. Since the services are all so similar, I used a single dockerfile to create all three services (and copied the files for all three into each container). I also volume-mapped a directory (with the name of the service) into each service, as well as a `send` directory into the `router` service.
 
-## Submission
-In order to submit the assignment, do the following:
+I used ZeroMQ (ZMQ) as the primary message-passing system - all communication referenced can be assumed to use ZMQ unless explictly stated otherwise. I also used a `flask` intermediary service to provide a second method of file transfer. 
 
-1. Navigate to GitHub's project import page: [https://github.com/new/import](https://github.com/new/import)
+The `router` service watches the `send` directory for new files. Whenever it gets one, it tells the `dealer` service a new file had arrived (as well as its name), and the `dealer` opens a new file and tells `router` its ready. The `router` then sends the file in chunks to the `dealer`. Once the full file has been received, the `dealer` saves it to the `dealer` directory and uploads it to the `flask` service via requests. The `flask` service saves the file in the `flask` directory. It then checks the files extension; if the file is a CAD file with an `STL` extension, it also extracts the CAD file's vertices with `meshio`, rounds them to 4 sig figs, and saves them in an `output.csv` file, which it also uploads to flask via requests. After a file has been uploaded by the `dealer`, it tells the `router` (and provides the file's name), and the router downloads the file from `flask` with requests and saves it in the `router` directory. At this point, the file has made a round trip from the `router` and back.
 
-2. In the box titled "Your old repository's clone URL", paste the homework repository's link: [https://github.com/Machina-Labs/network_com_hw](https://github.com/Machina-Labs/network_com_hw)
+## Testing
 
-3. In the box titled "Repository Name", add a name for your local homework (ex. `network_com_soln`)
+### Requirements
 
-4. Set privacy level to "Public", then click "Begin Import" button at bottom of the page.
+The only requirements to test are Docker, docker-compose, and a bit of terminal knowledge. 
 
-5. Develop your homework solution in the cloned repository and push it to Github when you're done. Extra points for good Git hygiene.
+To ensure the volume-mapped directories will exist, you should create them:
 
-6. Send us the link to your repository.
+```bash
+mkdir send && \
+mkdir router && \
+mkdir dealer && \
+mkdir flask 
+```
+
+### Docker Setup
+
+An introduction to Docker is beyond the scope of this README. However I will provide the basic commands provided to run things. 
+
+I prefer to run things in detached mode. Logs must be explictly queried with `docker logs <service>` and the terminal that brings everything up can be closed without consequence. If you prefer to watch the logs in real time, simply remove the `-d` flag. 
+
+To bring up the services (in detached mode), from within this directory, run:
+
+```bash
+docker-compose build && \
+docker-compose up -d
+```
+
+NOTE: this first time you build it will take some time, but after that you won't have to build it again (unless you change something).
+
+You can check that the services are up by running:
+
+```bash
+docker ps -a
+```
+
+The output should look something like this:
+
+```
+CONTAINER ID   IMAGE                  COMMAND                  CREATED         STATUS         PORTS                    NAMES
+86677b15527f   machina_router         "python3 -u router.py"   5 seconds ago   Up 4 seconds   0.0.0.0:6000->6000/tcp   router
+827cca20e422   machina_dealer         "python3 -u dealer.py"   5 seconds ago   Up 4 seconds   0.0.0.0:7000->7000/tcp   dealer
+cf0f946cba42   machina_flask          "python3 -u flask_se…"   5 seconds ago   Up 4 seconds   0.0.0.0:5000->5000/tcp   flask
+```
+
+The services are named `router`, `dealer`, and `flask` - you can get the logs of any of them, at any time, by running these commands:
+
+```bash
+# get logs for router service
+docker logs router
+
+# get logs for dealer service
+docker logs dealer
+
+# get logs for flask service
+docker logs flask
+```
+
+When you are done, you can bring everything down with:
+
+```bash
+docker-compose down
+```
+
+### Testing the Services
+
+To test the services, simply move/copy the `cad_mesh.stl` (or any other file) into the `send` directory to trigger the pipeline, like so: 
+
+```bash
+cp cad_mesh.stl send/
+``` 
+
+You can check the logs of each service and ensure the output file in the `router` directory are the same with: 
+
+```bash
+diff cad_mesh.stl router/output.stl
+```
+
+You will also find the `output.csv` file there. If you want to send it again, be sure to clear out all of the volume-mapped folders first so you can ensure it all ran!
+
+## Potential Improvments
+
+- The `flask` service is not secured - it will allow uploads/downloads from anyone who can reach it. Since it runs locally in Docker, that is not really a concern, but if it were deployed and available on the internet, it very much would be
+
+- None of the services are threaded - this would drastically improve file transfer time, especially for larg files
+
+- Use one dockerfile per service to cut down on size
+
+- The flask service does not have any frontend code and could do with a UI
+
+- A step could be added to both the `dealer` and `router` to ensure they can reach `flask` before proceeding
+
+- Adding timing would highlight the slow parts
+
+## Sources
+
+#### ZMQ Sources
+https://zguide.zeromq.org/docs/chapter1/
+https://zguide.zeromq.org/docs/chapter7/#Transferring-Files
+https://github.com/booksbyus/zguide/blob/master/examples/Python/zhelpers.py
+https://stackoverflow.com/questions/47438718/zeromq-req-recv-hangs-with-messages-larger-than-1kb-if-run-inside-docker
+
+#### Writing Files
+https://www.daniweb.com/programming/software-development/code/418239/write-an-output-file-by-fixed-length-chunks
+https://www.blopig.com/blog/2016/08/processing-large-files-using-python/
+https://thepythonguru.com/python-how-to-read-and-write-files/
+
+#### Flask Sources
+https://flask.palletsprojects.com/en/2.0.x/patterns/fileuploads/
+https://stackoverflow.com/questions/16694907/download-large-file-in-python-with-requests
+
+#### Meshio Docs
+https://github.com/nschloe/meshio
