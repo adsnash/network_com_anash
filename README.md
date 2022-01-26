@@ -4,9 +4,9 @@
 
 Create 2 independent processes A & B cabable of sending a file through 2 different methods. Process A must be able to send a CAD file, `cad_mesh.stl` to process B. Process B must then return the file to process A, where it will be saved as `output.stl`. The two files must match. For bonus points, have process B extract the CAD file's vertices, round them to 4 sig figs, and save them in a `CSV` file, called `output.csv`. 
 
-Read the full assignent here: https://github.com/Machina-Labs/network_com_hw
+Read the full challenge in the `CHALLENGE.md` or visit the original git repo here: https://github.com/Machina-Labs/network_com_hw
 
-## The Solution
+## My Solution
 
 For semantic's sake, process A = `router` and process B = `dealer`. 
 
@@ -21,15 +21,6 @@ The `router` service watches the `send` directory for new files. Whenever it get
 ### Requirements
 
 The only requirements to test are Docker, docker-compose, and a bit of terminal knowledge. 
-
-To ensure the volume-mapped directories will exist, you should create them:
-
-```bash
-mkdir send && \
-mkdir router && \
-mkdir dealer && \
-mkdir flask 
-```
 
 ### Docker Setup
 
